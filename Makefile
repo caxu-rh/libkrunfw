@@ -3,6 +3,8 @@ KERNEL_REMOTE = https://cdn.kernel.org/pub/linux/kernel/v6.x/$(KERNEL_VERSION).t
 KERNEL_TARBALL = tarballs/$(KERNEL_VERSION).tar.xz
 KERNEL_SOURCES = $(KERNEL_VERSION)
 KERNEL_PATCHES = $(shell find patches/ -name "0*.patch" | sort)
+KERNEL_PATCH_SIG = $(shell cksum $(KERNEL_PATCHES) 2>/dev/null | cksum | awk '{print $$1}')
+KERNEL_PREPARED = $(KERNEL_SOURCES)/.prepared$(VARIANT)-$(GUESTARCH)-$(KERNEL_PATCH_SIG)
 KERNEL_C_BUNDLE = kernel.c
 
 ABI_VERSION = 5
@@ -139,9 +141,10 @@ $(KERNEL_TARBALL):
 	@mkdir -p tarballs
 	curl $(KERNEL_REMOTE) -o $(KERNEL_TARBALL)
 
-$(KERNEL_SOURCES): $(KERNEL_TARBALL)
+$(KERNEL_PREPARED): $(KERNEL_TARBALL) $(KERNEL_PATCHES) config-libkrunfw$(VARIANT)_$(GUESTARCH)
+	rm -rf $(KERNEL_SOURCES)
 	tar xf $(KERNEL_TARBALL)
-	for patch in $(KERNEL_PATCHES); do patch -p1 -d $(KERNEL_SOURCES) < "$$patch"; done
+	for patch in $(KERNEL_PATCHES); do patch -p1 -d $(KERNEL_SOURCES) < "$$patch" || exit 1; done
 	cp config-libkrunfw$(VARIANT)_$(GUESTARCH) $(KERNEL_SOURCES)/.config
 ifeq ($(OS),Darwin)
 ifeq ($(MACOS_BUILDER),native)
@@ -152,8 +155,9 @@ endif
 else
 	cd $(KERNEL_SOURCES) ; $(MAKE) olddefconfig
 endif
+	touch $@
 
-$(KERNEL_BINARY_$(GUESTARCH)): $(KERNEL_SOURCES)
+$(KERNEL_BINARY_$(GUESTARCH)): $(KERNEL_PREPARED)
 ifeq ($(OS),Darwin)
 ifeq ($(MACOS_BUILDER),native)
 	cd $(KERNEL_SOURCES) && rm -f .version && $(KERNEL_MAKE) $(MAKEFLAGS) $(KERNEL_KBUILD_FLAGS) $(KERNEL_HOSTFLAGS)
